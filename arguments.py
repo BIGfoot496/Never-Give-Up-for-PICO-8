@@ -19,7 +19,7 @@ def get_args():
     parser.add_argument('--mode', dest='mode', type=str, default='train')              # can be 'train' or 'test'
     parser.add_argument('--actor_model', dest='actor_model', type=str, default='')     # your actor model filename
     parser.add_argument('--critic_model', dest='critic_model', type=str, default='')   # your critic model filename
-    parser.add_argument('--ep', dest='ep', type=int, default='')                       # number of episodes to run
+    parser.add_argument('--ep', dest='ep', type=int, default=50)                       # number of episodes to run
 
 
     args = parser.parse_args()

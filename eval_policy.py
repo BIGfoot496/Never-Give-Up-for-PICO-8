@@ -82,8 +82,7 @@ def eval_policy(policy, env, ep, render=False):
     """
         The main function to evaluate our policy with. It will iterate a generator object
         "rollout", which will simulate each episode and return the most recent episode's
-        length and return. We can then log it right after. And yes, eval_policy will run
-        forever until you kill the process. 
+        length and return. We can then log it right after.
         Parameters:
             policy - The trained policy to test, basically another name for our actor model
             env - The environment to test the policy on

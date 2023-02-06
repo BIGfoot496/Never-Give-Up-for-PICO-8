@@ -27,19 +27,27 @@ class PPO:
             Returns:
                 None
         """
-        # Make sure the environment is compatible with our code
-        assert(type(env.observation_space) == gym.spaces.Box)
-        assert(type(env.action_space) == gym.spaces.Box)
 
         # Initialize hyperparameters for training with PPO
         self._init_hyperparameters(hyperparameters)
-
+        
+        # Make sure the environment is compatible with our code
+        assert(type(env.observation_space) == gym.spaces.Box)
+            
         # Extract environment information
-        self.env = env
-        self.obs_dim = env.observation_space.shape[0]
-        self.act_dim = env.action_space.shape[0]
+        if type(env.action_space) == gym.spaces.Box:
+            self.act_type = 'box'
+            self.env = env
+            self.obs_dim = env.observation_space.shape[0]
+            self.act_dim = env.action_space.shape[0]
+        
+        if type(env.action_space) == gym.spaces.Discrete:
+            self.act_type = 'discrete'
+            self.env = env
+            self.obs_dim = env.observation_space.shape[0]
+            self.act_dim = env.action_space.n
 
-         # Initialize actor and critic networks
+        # Initialize actor and critic networks
         self.actor = policy_class(self.obs_dim, self.act_dim)                                                   # ALG STEP 1
         self.critic = policy_class(self.obs_dim, 1)
 
@@ -190,15 +198,20 @@ class PPO:
                 # Track observations in this batch
                 batch_obs.append(obs)
 
-                # Calculate action and make a step in the env. 
-                # Note that rew is short for reward.
+                # Calculate action 
                 action, log_prob = self.get_action(obs)
-                obs, rew, done, _, _ = self.env.step(action)
 
-                # Track recent reward, action, and action log probability
-                ep_rews.append(rew)
+                # Track recent action, and action log probability
                 batch_acts.append(action)
                 batch_log_probs.append(log_prob)
+                
+                # Make a step in the env and track reward.
+                # Note that rew is short for reward.
+                if self.act_type == 'discrete':
+                    action = np.argmax(action)
+                obs, rew, done, _, _ = self.env.step(action)
+                ep_rews.append(rew)
+
 
                 # If the environment tells us the episode is terminated, break
                 if done:

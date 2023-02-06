@@ -2,6 +2,8 @@ import autoit
 import time
 import keyboard
 import random
+from PIL import ImageGrab, Image
+import numpy as np
 
 
 def boot_pico8_celeste():
@@ -22,7 +24,6 @@ def boot_pico8_celeste():
     
     
     hwnd = autoit.win_get_handle("[REGEXPTITLE:.*PICO-8.*]")
-    print(hwnd)
     autoit.win_move_by_handle(hwnd, -8, 0, 144, 167)
     autoit.mouse_click("left", 50, 50)
     
@@ -48,7 +49,7 @@ def play_random():
     h_arrows = ["left arrow", "right arrow", ""]
     v_arrows = ["up arrow", "down arrow", ""]
     buttons = ['x', 'z', '']
-    for i in range(1000):
+    for i in range(10):
         txt = ''
         h = random.choice(h_arrows)
         if h:
@@ -66,6 +67,12 @@ def play_random():
         if txt:
             keyboard.send(txt)
             time.sleep(1/30)
+        grab_pixels()
+            
+def grab_pixels():
+    img = ImageGrab.grab(bbox=(0,31,128,159))
+    img = np.array(img.getdata()).transpose().reshape((3,128,128))
+    print(img, '\n\n\n')
 
 boot_pico8_celeste()
 play_random()
