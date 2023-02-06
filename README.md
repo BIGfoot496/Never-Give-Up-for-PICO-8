@@ -5,7 +5,9 @@ This repo is copied from the PPO for Beginners implementation by Eric Yu. I inte
 # TODO:
 
 Implement discrete action space support
+
 Make a gym environment from PICO-8
+
 Build the whole of NGU lol
 
 # Known issues
