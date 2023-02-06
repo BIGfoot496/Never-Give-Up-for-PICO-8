@@ -8,7 +8,7 @@ import gym
 import time
 
 import numpy as np
-import time
+
 import torch
 import torch.nn as nn
 from torch.optim import Adam
@@ -21,10 +21,12 @@ class PPO:
 	def __init__(self, policy_class, env, **hyperparameters):
 		"""
 			Initializes the PPO model, including hyperparameters.
+
 			Parameters:
 				policy_class - the policy class to use for our actor/critic networks.
 				env - the environment to train on.
 				hyperparameters - all extra arguments passed into PPO that should be hyperparameters.
+
 			Returns:
 				None
 		"""
@@ -54,7 +56,6 @@ class PPO:
 
 		# This logger will help us with printing out summaries of each iteration
 		self.logger = {
-			'delta_t': time.time_ns(),
 			't_so_far': 0,          # timesteps so far
 			'i_so_far': 0,          # iterations so far
 			'batch_lens': [],       # episodic lengths in batch
@@ -65,8 +66,10 @@ class PPO:
 	def learn(self, total_timesteps):
 		"""
 			Train the actor and critic networks. Here is where the main PPO algorithm resides.
+
 			Parameters:
 				total_timesteps - the total number of timesteps to train for
+
 			Return:
 				None
 		"""
@@ -89,7 +92,7 @@ class PPO:
 			self.logger['i_so_far'] = i_so_far
 
 			# Calculate advantage at k-th iteration
-			V, _ = self.evaluate(batch_obs, batch_acts)
+			V, _ = self.evaluate(batch_obs, batch_acts, batch_rtgs)
 			A_k = batch_rtgs - V.detach()                                                                       # ALG STEP 5
 
 			# One of the only tricks I use that isn't in the pseudocode. Normalizing advantages
@@ -101,7 +104,7 @@ class PPO:
 			# This is the loop where we update our network for some n epochs
 			for _ in range(self.n_updates_per_iteration):                                                       # ALG STEP 6 & 7
 				# Calculate V_phi and pi_theta(a_t | s_t)
-				V, curr_log_probs = self.evaluate(batch_obs, batch_acts)
+				V, curr_log_probs = self.evaluate(batch_obs, batch_acts, batch_rtgs)
 
 				# Calculate the ratio pi_theta(a_t | s_t) / pi_theta_k(a_t | s_t)
 				# NOTE: we just subtract the logs, which is the same as
@@ -109,7 +112,7 @@ class PPO:
 				# For why we use log probabilities instead of actual probabilities,
 				# here's a great explanation: 
 				# https://cs.stackexchange.com/questions/70518/why-do-we-use-the-log-in-gradient-based-reinforcement-algorithms
-				# TL;DR makes gradient ascent easier behind the scenes.
+				# TL;DR makes gradient descent easier behind the scenes.
 				ratios = torch.exp(curr_log_probs - batch_log_probs)
 
 				# Calculate surrogate losses.
@@ -149,8 +152,10 @@ class PPO:
 			Too many transformers references, I'm sorry. This is where we collect the batch of data
 			from simulation. Since this is an on-policy algorithm, we'll need to collect a fresh batch
 			of data each time we iterate the actor/critic networks.
+
 			Parameters:
 				None
+
 			Return:
 				batch_obs - the observations collected this batch. Shape: (number of timesteps, dimension of observation)
 				batch_acts - the actions collected this batch. Shape: (number of timesteps, dimension of action)
@@ -177,13 +182,13 @@ class PPO:
 			ep_rews = [] # rewards collected per episode
 
 			# Reset the environment. sNote that obs is short for observation. 
-			obs = self.env.reset()[0]
+			obs = self.env.reset()
 			done = False
 
 			# Run an episode for a maximum of max_timesteps_per_episode timesteps
 			for ep_t in range(self.max_timesteps_per_episode):
 				# If render is specified, render the environment
-				if self.render and (self.logger['i_so_far'] % self.render_every_i == 0) and len(batch_lens) == 0:
+				if self.render:
 					self.env.render()
 
 				t += 1 # Increment timesteps ran this batch so far
@@ -212,7 +217,7 @@ class PPO:
 		# Reshape data as tensors in the shape specified in function description, before returning
 		batch_obs = torch.tensor(batch_obs, dtype=torch.float)
 		batch_acts = torch.tensor(batch_acts, dtype=torch.float)
-		batch_log_probs = torch.tensor(batch_log_probs, dtype=torch.float)
+		batch_log_probs = torch.tensor(batch_log_probs, dtype=torch.float).flatten()
 		batch_rtgs = self.compute_rtgs(batch_rews)                                                              # ALG STEP 4
 
 		# Log the episodic returns and episodic lengths in this batch.
@@ -224,13 +229,15 @@ class PPO:
 	def compute_rtgs(self, batch_rews):
 		"""
 			Compute the Reward-To-Go of each timestep in a batch given the rewards.
+
 			Parameters:
 				batch_rews - the rewards in a batch, Shape: (number of episodes, number of timesteps per episode)
+
 			Return:
 				batch_rtgs - the rewards to go, Shape: (number of timesteps in batch)
 		"""
 		# The rewards-to-go (rtg) per episode per batch to return.
-		# The shape will be (num timesteps per episode)
+		# The shape will be (num episodes per batch, num timesteps per episode)
 		batch_rtgs = []
 
 		# Iterate through each episode
@@ -252,8 +259,10 @@ class PPO:
 	def get_action(self, obs):
 		"""
 			Queries an action from the actor network, should be called from rollout.
+
 			Parameters:
 				obs - the observation at the current timestep
+
 			Return:
 				action - the action to take, as a numpy array
 				log_prob - the log probability of the selected action in the distribution
@@ -272,22 +281,27 @@ class PPO:
 		# Calculate the log probability for that action
 		log_prob = dist.log_prob(action)
 
+		# If we're testing, just return the deterministic action. Sampling should only be for training
+		# as our "exploration" factor.
+		if self.deterministic:
+			return mean.detach().numpy(), 1
+
 		# Return the sampled action and the log probability of that action in our distribution
 		return action.detach().numpy(), log_prob.detach()
 
-	def evaluate(self, batch_obs, batch_acts):
+	def evaluate(self, batch_obs, batch_acts, batch_rtgs):
 		"""
 			Estimate the values of each observation, and the log probs of
 			each action in the most recent batch with the most recent
 			iteration of the actor network. Should be called from learn.
+
 			Parameters:
 				batch_obs - the observations from the most recently collected batch as a tensor.
 							Shape: (number of timesteps in batch, dimension of observation)
 				batch_acts - the actions from the most recently collected batch as a tensor.
 							Shape: (number of timesteps in batch, dimension of action)
-			Return:
-				V - the predicted values of batch_obs
-				log_probs - the log probabilities of the actions taken in batch_acts given batch_obs
+				batch_rtgs - the rewards-to-go calculated in the most recently collected
+								batch as a tensor. Shape: (number of timesteps in batch)
 		"""
 		# Query critic network for a value V for each batch_obs. Shape of V should be same as batch_rtgs
 		V = self.critic(batch_obs).squeeze()
@@ -305,9 +319,11 @@ class PPO:
 	def _init_hyperparameters(self, hyperparameters):
 		"""
 			Initialize default and custom values for hyperparameters
+
 			Parameters:
 				hyperparameters - the extra arguments included when creating the PPO model, should only include
 									hyperparameters defined below with custom values.
+
 			Return:
 				None
 		"""
@@ -321,10 +337,10 @@ class PPO:
 		self.clip = 0.2                                 # Recommended 0.2, helps define the threshold to clip the ratio during SGA
 
 		# Miscellaneous parameters
-		self.render = True                              # If we should render during rollout
-		self.render_every_i = 10                        # Only render every n iterations
+		self.render = False                             # If we should render during rollout
 		self.save_freq = 10                             # How often we save in number of iterations
-		self.seed = None                                # Sets the seed of our program, used for reproducibility of results
+		self.deterministic = False                      # If we're testing, don't sample actions
+		self.seed = None								# Sets the seed of our program, used for reproducibility of results
 
 		# Change any default values to custom values for specified hyperparameters
 		for param, val in hyperparameters.items():
@@ -342,19 +358,16 @@ class PPO:
 	def _log_summary(self):
 		"""
 			Print to stdout what we've logged so far in the most recent batch.
+
 			Parameters:
 				None
+
 			Return:
 				None
 		"""
 		# Calculate logging values. I use a few python shortcuts to calculate each value
 		# without explaining since it's not too important to PPO; feel free to look it over,
 		# and if you have any questions you can email me (look at bottom of README)
-		delta_t = self.logger['delta_t']
-		self.logger['delta_t'] = time.time_ns()
-		delta_t = (self.logger['delta_t'] - delta_t) / 1e9
-		delta_t = str(round(delta_t, 2))
-
 		t_so_far = self.logger['t_so_far']
 		i_so_far = self.logger['i_so_far']
 		avg_ep_lens = np.mean(self.logger['batch_lens'])
@@ -373,7 +386,6 @@ class PPO:
 		print(f"Average Episodic Return: {avg_ep_rews}", flush=True)
 		print(f"Average Loss: {avg_actor_loss}", flush=True)
 		print(f"Timesteps So Far: {t_so_far}", flush=True)
-		print(f"Iteration took: {delta_t} secs", flush=True)
 		print(f"------------------------------------------------------", flush=True)
 		print(flush=True)
 

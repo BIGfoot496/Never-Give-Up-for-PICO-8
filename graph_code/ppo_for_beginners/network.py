@@ -15,9 +15,11 @@ class FeedForwardNN(nn.Module):
 	def __init__(self, in_dim, out_dim):
 		"""
 			Initialize the network and set up the layers.
+
 			Parameters:
 				in_dim - input dimensions as an int
 				out_dim - output dimensions as an int
+
 			Return:
 				None
 		"""
@@ -30,8 +32,10 @@ class FeedForwardNN(nn.Module):
 	def forward(self, obs):
 		"""
 			Runs a forward pass on the neural network.
+
 			Parameters:
 				obs - observation to pass as input
+
 			Return:
 				output - the output of our forward pass
 		"""

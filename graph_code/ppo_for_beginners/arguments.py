@@ -9,8 +9,10 @@ def get_args():
 	"""
 		Description:
 		Parses arguments at command line.
+
 		Parameters:
 			None
+
 		Return:
 			args - the arguments parsed
 	"""
