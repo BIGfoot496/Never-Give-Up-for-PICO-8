@@ -4,9 +4,13 @@ This repo is copied from the PPO for Beginners implementation by Eric Yu. I inte
 
 # TODO:
 
-Implement discrete action space support
-
 Make a gym environment from PICO-8
+
+Rewrite the data collection and visualization module (W&B?)
+
+Rewrite the policy evaluation module (or fix the existing one)
+
+Add PPO optimization tricks (right now it is very unstable, and learns way too slowly)
 
 Build the whole of NGU lol
 
