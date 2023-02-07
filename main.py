@@ -6,6 +6,7 @@
 import gym
 import sys
 import torch
+import wandb
 
 from arguments import get_args
 from ppo import PPO
@@ -22,7 +23,11 @@ def train(env, hyperparameters, actor_model, critic_model):
             critic_model - the critic model to load in if we want to continue training
         Return:
             None
-    """    
+    """
+    # Initialize W&B for data logging
+    wandb.init(project="ngu", entity="bigfoot")
+    wandb.config = hyperparameters
+    
     print("Training", flush=True)
 
     # Create a model for PPO.
@@ -102,7 +107,7 @@ def main(args):
     # Creates the environment we'll be running. If you want to replace with your own
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
-    env = gym.make('LunarLander-v2', render_mode = 'rgb_array')
+    env = gym.make('Pendulum-v1', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
     if args.mode == 'train':

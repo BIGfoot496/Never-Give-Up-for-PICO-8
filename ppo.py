@@ -6,6 +6,7 @@
 
 import gym
 import time
+import wandb
 
 import numpy as np
 import torch
@@ -372,6 +373,9 @@ class PPO:
         avg_ep_lens = np.mean(self.logger['batch_lens'])
         avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']])
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
+
+        # Log the data in W&B
+        wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "loss": avg_actor_loss})
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))
