@@ -84,7 +84,7 @@ class PPO:
         i_so_far = 0 # Iterations ran so far
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
-            batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens = self.rollout()                     # ALG STEP 3
+            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_rtgs, batch_lens = self.rollout()                     # ALG STEP 3
 
             # Calculate how many timesteps we collected this batch
             t_so_far += np.sum(batch_lens)
@@ -96,9 +96,10 @@ class PPO:
             self.logger['t_so_far'] = t_so_far
             self.logger['i_so_far'] = i_so_far
 
-            # Calculate advantage at k-th iteration
+            # Calculate advantage at k-th iteration using GAE
             V, _ = self.evaluate(batch_obs, batch_acts)
-            A_k = batch_rtgs - V.detach()                                                                       # ALG STEP 5
+            #A_k = batch_rtgs - V.detach()  # Monte Carlo
+            A_k = self.estimate_advantage(batch_rews, V.detach())
 
             # One of the only tricks I use that isn't in the pseudocode. Normalizing advantages
             # isn't theoretically necessary, but in practice it decreases the variance of 
@@ -163,6 +164,7 @@ class PPO:
                 batch_obs - the observations collected this batch. Shape: (number of timesteps, dimension of observation)
                 batch_acts - the actions collected this batch. Shape: (number of timesteps, dimension of action)
                 batch_log_probs - the log probabilities of each action taken this batch. Shape: (number of timesteps)
+                batch_rews - the rewards of each timestep in this batch. Shape: (number of timesteps)
                 batch_rtgs - the Rewards-To-Go of each timestep in this batch. Shape: (number of timesteps)
                 batch_lens - the lengths of each episode this batch. Shape: (number of episodes)
         """
@@ -232,7 +234,7 @@ class PPO:
         self.logger['batch_rews'] = batch_rews
         self.logger['batch_lens'] = batch_lens
 
-        return batch_obs, batch_acts, batch_log_probs, batch_rtgs, batch_lens
+        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_rtgs, batch_lens
 
     def compute_rtgs(self, batch_rews):
         """
@@ -245,12 +247,12 @@ class PPO:
         # The rewards-to-go (rtg) per episode per batch to return.
         # The shape will be (num timesteps per episode)
         batch_rtgs = []
-
+        
         # Iterate through each episode
         for ep_rews in reversed(batch_rews):
 
             discounted_reward = 0 # The discounted reward so far
-
+            
             # Iterate through all rewards in the episode. We go backwards for smoother calculation of each
             # discounted return (think about why it would be harder starting from the beginning)
             for rew in reversed(ep_rews):
@@ -261,7 +263,37 @@ class PPO:
         batch_rtgs = torch.tensor(batch_rtgs, dtype=torch.float)
 
         return batch_rtgs
+    
+    # Generalized Advantage Estimation
+    def estimate_advantage(self, batch_rews, values):
+        """
+            Estimate the advantage at each timestep in a batch given the rewards.
+            Parameters:
+                batch_rews - the rewards in a batch, Shape: (number of episodes, number of timesteps per episode)
+                values - the value function estimates, Shape: (number of timesteps in batch)
+            Return:
+                advantages - the estimated advantages, Shape: (number of timesteps in batch)
+        """
+        # The advantages per episode per batch to return.
+        # The shape will be (num timesteps per episode)
+        advantages = []
+        
+        # Iterate through each episode
+        for ep_rews in reversed(batch_rews):
+            
+            discounted_estimate = 0
+            
+            # Iterate through all rewards in the episode.
+            for rew, v_cur, v_next in reversed(list(zip(ep_rews, values, values[1:]+torch.tensor([0])))):
+                delta = rew + v_next * self.gamma - v_cur
+                discounted_estimate = delta + discounted_estimate * self.gamma * self.lambda_return
+                advantages.insert(0, discounted_estimate)
 
+        # Convert the advantages into a tensor
+        advantages = torch.tensor(advantages, dtype=torch.float)
+
+        return advantages
+        
     def get_action(self, obs):
         """
             Queries an action from the actor network, should be called from rollout.
@@ -314,7 +346,7 @@ class PPO:
         # Return the value vector V of each observation in the batch
         # and log probabilities log_probs of each action in the batch
         return V, log_probs
-
+    
     def _init_hyperparameters(self, hyperparameters):
         """
             Initialize default and custom values for hyperparameters
@@ -331,6 +363,7 @@ class PPO:
         self.n_updates_per_iteration = 5                # Number of times to update actor/critic per iteration
         self.lr = 0.005                                 # Learning rate of actor optimizer
         self.gamma = 0.95                               # Discount factor to be applied when calculating Rewards-To-Go
+        self.lambda_return = 0.96                       # Smoothing factor to be applied in GAE. lambda=1 is equivalent to Monte Carlo
         self.clip = 0.2                                 # Recommended 0.2, helps define the threshold to clip the ratio during SGA
 
         # Miscellaneous parameters
