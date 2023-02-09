@@ -14,6 +14,8 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.distributions import MultivariateNormal
 
+from rnd import RND
+
 class PPO:
     """
         This is the PPO class we will use as our model in main.py
@@ -59,6 +61,9 @@ class PPO:
         # Initialize the covariance matrix used to query the actor for actions
         self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
         self.cov_mat = torch.diag(self.cov_var)
+
+        # Initialize the RND networks
+        self.rnd = RND(self.obs_shape)
 
         # This logger will help us with printing out summaries of each iteration
         self.logger = {
@@ -210,6 +215,7 @@ class PPO:
                 if self.act_type == 'discrete':
                     action = np.argmax(action)
                 obs, rew, done, _, _ = self.env.step(action)
+                rew += self.rnd.get_reward(obs)
                 ep_rews.append(rew)
 
 
@@ -252,7 +258,7 @@ class PPO:
             discounted_estimate = 0
             
             # Iterate through all rewards in the episode.
-            for rew, v_cur, v_next in reversed(list(zip(ep_rews, values, values[1:]+torch.tensor([0])))):
+            for rew, v_cur, v_next in reversed(list(zip(ep_rews, values, values[1:]))):
                 delta = rew + v_next * self.gamma - v_cur
                 discounted_estimate = delta + discounted_estimate * self.gamma * self.lambda_return
                 advantages.insert(0, discounted_estimate)
