@@ -11,7 +11,7 @@ import numpy as np
 
 class FeedForwardNN(nn.Module):
     """
-        A standard in_dim-dim_0-...dim_n-out_dim 
+        A standard in_dim-dim_1-...dim_n-out_dim 
         Fully Connected Feed Forward Neural Network.
     """
     def __init__(self, in_shape, out_shape, hidden_shape = (64,64), out_activation=None):

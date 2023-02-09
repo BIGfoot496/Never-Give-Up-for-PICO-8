@@ -63,7 +63,7 @@ class PPO:
         self.cov_mat = torch.diag(self.cov_var)
 
         # Initialize the RND networks
-        self.rnd = RND(self.obs_shape)
+        self.rnd = RND(self.obs_shape, (0,0))
 
         # This logger will help us with printing out summaries of each iteration
         self.logger = {
