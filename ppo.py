@@ -39,25 +39,25 @@ class PPO:
         if type(env.action_space) == gym.spaces.Box:
             self.act_type = 'box'
             self.env = env
-            self.obs_dim = env.observation_space.shape[0]
-            self.act_dim = env.action_space.shape[0]
+            self.obs_shape = env.observation_space.shape
+            self.act_shape = env.action_space.shape
         
         if type(env.action_space) == gym.spaces.Discrete:
             self.act_type = 'discrete'
             self.env = env
-            self.obs_dim = env.observation_space.shape[0]
-            self.act_dim = env.action_space.n
+            self.obs_shape = env.observation_space.shape
+            self.act_shape = (env.action_space.n,)
 
         # Initialize actor and critic networks
-        self.actor = policy_class(self.obs_dim, self.act_dim)                                                   # ALG STEP 1
-        self.critic = policy_class(self.obs_dim, 1)
+        self.actor = policy_class(self.obs_shape, self.act_shape)                                                   # ALG STEP 1
+        self.critic = policy_class(self.obs_shape, (1,))
 
         # Initialize optimizers for actor and critic
         self.actor_optim = Adam(self.actor.parameters(), lr=self.lr)
         self.critic_optim = Adam(self.critic.parameters(), lr=self.lr)
 
         # Initialize the covariance matrix used to query the actor for actions
-        self.cov_var = torch.full(size=(self.act_dim,), fill_value=0.5)
+        self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
         self.cov_mat = torch.diag(self.cov_var)
 
         # This logger will help us with printing out summaries of each iteration
@@ -84,7 +84,7 @@ class PPO:
         i_so_far = 0 # Iterations ran so far
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
-            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_rtgs, batch_lens = self.rollout()                     # ALG STEP 3
+            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens = self.rollout()                     # ALG STEP 3
 
             # Calculate how many timesteps we collected this batch
             t_so_far += np.sum(batch_lens)
@@ -98,7 +98,6 @@ class PPO:
 
             # Calculate advantage at k-th iteration using GAE
             V, _ = self.evaluate(batch_obs, batch_acts)
-            #A_k = batch_rtgs - V.detach()  # Monte Carlo
             A_k = self.estimate_advantage(batch_rews, V.detach())
 
             # One of the only tricks I use that isn't in the pseudocode. Normalizing advantages
@@ -130,7 +129,7 @@ class PPO:
                 # the performance function, but Adam minimizes the loss. So minimizing the negative
                 # performance function maximizes it.
                 actor_loss = (-torch.min(surr1, surr2)).mean()
-                critic_loss = nn.MSELoss()(V, batch_rtgs)
+                critic_loss = nn.MSELoss()(V, A_k + V)
 
                 # Calculate gradients and perform backward propagation for actor network
                 self.actor_optim.zero_grad()
@@ -165,7 +164,6 @@ class PPO:
                 batch_acts - the actions collected this batch. Shape: (number of timesteps, dimension of action)
                 batch_log_probs - the log probabilities of each action taken this batch. Shape: (number of timesteps)
                 batch_rews - the rewards of each timestep in this batch. Shape: (number of timesteps)
-                batch_rtgs - the Rewards-To-Go of each timestep in this batch. Shape: (number of timesteps)
                 batch_lens - the lengths of each episode this batch. Shape: (number of episodes)
         """
         # Batch data. For more details, check function header.
@@ -173,7 +171,6 @@ class PPO:
         batch_acts = []
         batch_log_probs = []
         batch_rews = []
-        batch_rtgs = []
         batch_lens = []
 
         # Episodic data. Keeps track of rewards per episode, will get cleared
@@ -228,42 +225,13 @@ class PPO:
         batch_obs = torch.tensor(batch_obs, dtype=torch.float)
         batch_acts = torch.tensor(batch_acts, dtype=torch.float)
         batch_log_probs = torch.tensor(batch_log_probs, dtype=torch.float)
-        batch_rtgs = self.compute_rtgs(batch_rews)                                                              # ALG STEP 4
 
         # Log the episodic returns and episodic lengths in this batch.
         self.logger['batch_rews'] = batch_rews
         self.logger['batch_lens'] = batch_lens
 
-        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_rtgs, batch_lens
+        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens
 
-    def compute_rtgs(self, batch_rews):
-        """
-            Compute the Reward-To-Go of each timestep in a batch given the rewards.
-            Parameters:
-                batch_rews - the rewards in a batch, Shape: (number of episodes, number of timesteps per episode)
-            Return:
-                batch_rtgs - the rewards to go, Shape: (number of timesteps in batch)
-        """
-        # The rewards-to-go (rtg) per episode per batch to return.
-        # The shape will be (num timesteps per episode)
-        batch_rtgs = []
-        
-        # Iterate through each episode
-        for ep_rews in reversed(batch_rews):
-
-            discounted_reward = 0 # The discounted reward so far
-            
-            # Iterate through all rewards in the episode. We go backwards for smoother calculation of each
-            # discounted return (think about why it would be harder starting from the beginning)
-            for rew in reversed(ep_rews):
-                discounted_reward = rew + discounted_reward * self.gamma
-                batch_rtgs.insert(0, discounted_reward)
-
-        # Convert the rewards-to-go into a tensor
-        batch_rtgs = torch.tensor(batch_rtgs, dtype=torch.float)
-
-        return batch_rtgs
-    
     # Generalized Advantage Estimation
     def estimate_advantage(self, batch_rews, values):
         """
@@ -334,7 +302,7 @@ class PPO:
                 V - the predicted values of batch_obs
                 log_probs - the log probabilities of the actions taken in batch_acts given batch_obs
         """
-        # Query critic network for a value V for each batch_obs. Shape of V should be same as batch_rtgs
+        # Query critic network for a value V for each batch_obs. Shape of V should be same as batch_rews
         V = self.critic(batch_obs).squeeze()
 
         # Calculate the log probabilities of batch actions using most recent actor network.

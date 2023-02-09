@@ -4,15 +4,17 @@ This repo is copied from the PPO for Beginners implementation by Eric Yu. I inte
 
 # TODO:
 
-Make a gym environment from PICO-8
-
-Rewrite the data collection and visualization module (W&B?)
+Refactor ppo.py to remove elifs (factory method depending on action space type)
 
 Rewrite the policy evaluation module (or fix the existing one)
 
-Add PPO optimization tricks (right now it is very unstable, and learns way too slowly)
+Build the whole of NGU lol:
 
-Build the whole of NGU lol
+    Build RND
+    
+    Build Episodic Memory module
+    
+Make a gym environment from PICO-8
 
 # Known issues
 

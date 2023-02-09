@@ -10,7 +10,7 @@ import wandb
 
 from arguments import get_args
 from ppo import PPO
-from network import FeedForwardNN
+import black_box
 from eval_policy import eval_policy
 
 def train(env, hyperparameters, actor_model, critic_model):
@@ -31,7 +31,8 @@ def train(env, hyperparameters, actor_model, critic_model):
     wandb.config.update({'env':env})
 
     # Create a model for PPO.
-    model = PPO(policy_class=FeedForwardNN, env=env, **hyperparameters)
+    policy_class = black_box.black_box(black_box.FeedForwardNN, hidden_shape=(64,64), out_activation=None)
+    model = PPO(policy_class=policy_class, env=env, **hyperparameters)
 
     # Tries to load in an existing actor/critic model to continue training on
     if actor_model != '' and critic_model != '':
@@ -48,7 +49,7 @@ def train(env, hyperparameters, actor_model, critic_model):
     # Train the PPO model with a specified total timesteps
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
-    model.learn(total_timesteps=1_000_000)
+    model.learn(total_timesteps=400_000)
     run.finish()
 
     
@@ -69,11 +70,11 @@ def test(env, actor_model, ep):
         sys.exit(0)
 
     # Extract out dimensions of observation and action spaces
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape[0]
+    obs_shape = env.observation_space.shape
+    act_shape = env.action_space.shape
 
     # Build our policy the same way we build our actor model in PPO
-    policy = FeedForwardNN(obs_dim, act_dim)
+    policy = black_box.FeedForwardNN(obs_shape, act_shape)
 
     # Load in the actor model saved by the PPO algorithm
     policy.load_state_dict(torch.load(actor_model))
@@ -100,7 +101,7 @@ def main(args):
                 'max_timesteps_per_episode': 200, 
                 'gamma': 0.99, 
                 'n_updates_per_iteration': 10,
-                'lr': 1e-3, 
+                'lr': 3e-3, 
                 'clip': 0.15,
                 'lambda_return' : 0.98,
                 'render': True,
@@ -112,7 +113,7 @@ def main(args):
     # Creates the environment we'll be running. If you want to replace with your own
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
-    env = gym.make('MountainCar-v0', render_mode = 'rgb_array')
+    env = gym.make('Pendulum-v1', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
     if args.mode == 'train':
