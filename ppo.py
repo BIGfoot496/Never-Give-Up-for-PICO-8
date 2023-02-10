@@ -63,7 +63,7 @@ class PPO:
         self.cov_mat = torch.diag(self.cov_var)
 
         # Initialize the RND networks
-        self.rnd = RND(self.obs_shape, (0,0))
+        self.rnd = RND(self.obs_shape)
 
         # This logger will help us with printing out summaries of each iteration
         self.logger = {
@@ -89,7 +89,7 @@ class PPO:
         i_so_far = 0 # Iterations ran so far
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
-            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens = self.rollout()                     # ALG STEP 3
+            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_extr_rews, batch_lens = self.rollout()    # ALG STEP 3
 
             # Calculate how many timesteps we collected this batch
             t_so_far += np.sum(batch_lens)
@@ -168,7 +168,8 @@ class PPO:
                 batch_obs - the observations collected this batch. Shape: (number of timesteps, dimension of observation)
                 batch_acts - the actions collected this batch. Shape: (number of timesteps, dimension of action)
                 batch_log_probs - the log probabilities of each action taken this batch. Shape: (number of timesteps)
-                batch_rews - the rewards of each timestep in this batch. Shape: (number of timesteps)
+                batch_rews - the rewards of each timestep in this batch, as a sum of intrinsic and extrinsic rewards. Shape: (number of timesteps)
+                batch_extr_rews - the extrinsic rewards of each timestep in this batch. Shape: (number of episodes)
                 batch_lens - the lengths of each episode this batch. Shape: (number of episodes)
         """
         # Batch data. For more details, check function header.
@@ -176,17 +177,20 @@ class PPO:
         batch_acts = []
         batch_log_probs = []
         batch_rews = []
+        batch_extr_rews = []
         batch_lens = []
 
         # Episodic data. Keeps track of rewards per episode, will get cleared
         # upon each new episode
         ep_rews = []
+        ep_extr_rews = []
 
         t = 0 # Keeps track of how many timesteps we've run so far this batch
 
         # Keep simulating until we've run more than or equal to specified timesteps per batch
         while t < self.timesteps_per_batch:
             ep_rews = [] # rewards collected per episode
+            ep_extr_rews = []
 
             # Reset the environment. sNote that obs is short for observation. 
             obs = self.env.reset()[0]
@@ -215,6 +219,7 @@ class PPO:
                 if self.act_type == 'discrete':
                     action = np.argmax(action)
                 obs, rew, done, _, _ = self.env.step(action)
+                ep_extr_rews.append(rew)
                 rew += self.rnd.get_reward(obs)
                 ep_rews.append(rew)
 
@@ -226,6 +231,7 @@ class PPO:
             # Track episodic lengths and rewards
             batch_lens.append(ep_t + 1)
             batch_rews.append(ep_rews)
+            batch_extr_rews.append(ep_extr_rews)
 
         # Reshape data as tensors in the shape specified in function description, before returning
         batch_obs = torch.tensor(batch_obs, dtype=torch.float)
@@ -234,9 +240,10 @@ class PPO:
 
         # Log the episodic returns and episodic lengths in this batch.
         self.logger['batch_rews'] = batch_rews
+        self.logger['batch_extr_rews'] = batch_extr_rews
         self.logger['batch_lens'] = batch_lens
 
-        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_lens
+        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_extr_rews, batch_lens
 
     # Generalized Advantage Estimation
     def estimate_advantage(self, batch_rews, values):
@@ -378,14 +385,16 @@ class PPO:
         t_so_far = self.logger['t_so_far']
         i_so_far = self.logger['i_so_far']
         avg_ep_lens = np.mean(self.logger['batch_lens'])
+        avg_ep_extr_rews = np.mean([np.sum(ep_extr_rews) for ep_extr_rews in self.logger['batch_extr_rews']])
         avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']])
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
 
         # Log the data in W&B
-        wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "loss": avg_actor_loss})
+        #wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "loss": avg_actor_loss})
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))
+        avg_ep_extr_rews = str(round(avg_ep_extr_rews, 2))
         avg_ep_rews = str(round(avg_ep_rews, 2))
         avg_actor_loss = str(round(avg_actor_loss, 5))
 
@@ -393,7 +402,8 @@ class PPO:
         print(flush=True)
         print(f"-------------------- Iteration #{i_so_far} --------------------", flush=True)
         print(f"Average Episodic Length: {avg_ep_lens}", flush=True)
-        print(f"Average Episodic Return: {avg_ep_rews}", flush=True)
+        print(f"Average Episodic Return: {avg_ep_extr_rews}", flush=True)
+        print(f"Average Enhanced Episodic Return: {avg_ep_rews}", flush=True)
         print(f"Average Loss: {avg_actor_loss}", flush=True)
         print(f"Timesteps So Far: {t_so_far}", flush=True)
         print(f"Iteration took: {delta_t} secs", flush=True)

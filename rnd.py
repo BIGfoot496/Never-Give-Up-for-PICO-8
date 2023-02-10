@@ -15,12 +15,12 @@ class RND:
     The error of prediction is used as a dense intrinsic reward 
     for an RL agent to augment the sparse extrinsic reward.
     """
-    def __init__(self, in_shape, rand_batch):
+    def __init__(self, in_shape):
         self.lr = 3e-3
         self.target = FeedForwardNN(in_shape,  (32,), (64,128,64))
         self.predictor = FeedForwardNN(in_shape, (32,), (64,64))
         self.predictor_optim = Adam(self.predictor.parameters(), lr=self.lr)
-        self.welford = WelfordVarianceEstimator(rand_batch)
+        self.welford = WelfordVarianceEstimator((0,0))
 
     def get_reward(self, obs):
         targ = self.target(obs)
@@ -30,4 +30,4 @@ class RND:
         self.predictor_optim.zero_grad()
         loss.backward()
         self.predictor_optim.step()
-        return loss.detach()/self.welford.get_variance()
+        return loss.detach()/self.welford.get_variance()**0.5
