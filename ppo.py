@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.distributions import MultivariateNormal
+from torch.distributions import MultivariateNormal, Categorical
 
 from rnd import RND
 
@@ -20,11 +20,13 @@ class PPO:
     """
         This is the PPO class we will use as our model in main.py
     """
-    def __init__(self, policy_class, env, **hyperparameters):
+    def __init__(self, actor, critic, env, **hyperparameters):
         """
             Initializes the PPO model, including hyperparameters.
             Parameters:
-                policy_class - the policy class to use for our actor/critic networks.
+                actor, critic - pre-built architectures of the actor and critic networks 
+                    Both have to have the input be of obs_shape 
+                    The actor must output act_shape and the critic must output (1,) 
                 env - the environment to train on.
                 hyperparameters - all extra arguments passed into PPO that should be hyperparameters.
             Returns:
@@ -38,29 +40,30 @@ class PPO:
         assert(type(env.observation_space) == gym.spaces.Box)
             
         # Extract environment information
+        self.env = env
+        self.obs_shape = env.observation_space.shape
+
         if type(env.action_space) == gym.spaces.Box:
             self.act_type = 'box'
-            self.env = env
-            self.obs_shape = env.observation_space.shape
             self.act_shape = env.action_space.shape
         
         if type(env.action_space) == gym.spaces.Discrete:
             self.act_type = 'discrete'
-            self.env = env
-            self.obs_shape = env.observation_space.shape
+            # For discrete spaces the action is a softmax vector of probabilities to take each action
             self.act_shape = (env.action_space.n,)
 
         # Initialize actor and critic networks
-        self.actor = policy_class(self.obs_shape, self.act_shape)                                                   # ALG STEP 1
-        self.critic = policy_class(self.obs_shape, (1,))
+        self.actor = actor                                                                                      # ALG STEP 1
+        self.critic = critic
 
         # Initialize optimizers for actor and critic
         self.actor_optim = Adam(self.actor.parameters(), lr=self.lr)
         self.critic_optim = Adam(self.critic.parameters(), lr=self.lr)
 
-        # Initialize the covariance matrix used to query the actor for actions
-        self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
-        self.cov_mat = torch.diag(self.cov_var)
+        if self.act_type == 'box':
+            # Initialize the covariance matrix used to query the actor for actions
+            self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
+            self.cov_mat = torch.diag(self.cov_var)
 
         # Initialize the RND networks
         self.rnd = RND(self.obs_shape)
@@ -216,8 +219,6 @@ class PPO:
                 
                 # Make a step in the env and track reward.
                 # Note that rew is short for reward.
-                if self.act_type == 'discrete':
-                    action = np.argmax(action)
                 obs, rew, done, _, _ = self.env.step(action)
                 ep_extr_rews.append(rew)
                 rew += self.rnd.get_reward(obs)
@@ -285,16 +286,19 @@ class PPO:
                 log_prob - the log probability of the selected action in the distribution
         """
         # Query the actor network for a mean action
-        mean = self.actor(obs)
+        out = self.actor(obs)
+        
+        if self.act_type == 'box':
+            # Create a distribution with the mean action and std from the covariance matrix above.
+            dist = MultivariateNormal(out, self.cov_mat)
 
-        # Create a distribution with the mean action and std from the covariance matrix above.
-        # For more information on how this distribution works, check out Andrew Ng's lecture on it:
-        # https://www.youtube.com/watch?v=JjB58InuTqM
-        dist = MultivariateNormal(mean, self.cov_mat)
-
+        if self.act_type == 'discrete':
+            # Create a distribution from the softmax vector the actor returned
+            dist = Categorical(out)
+        
         # Sample an action from the distribution
         action = dist.sample()
-
+        
         # Calculate the log probability for that action
         log_prob = dist.log_prob(action)
 
@@ -320,9 +324,13 @@ class PPO:
 
         # Calculate the log probabilities of batch actions using most recent actor network.
         # This segment of code is similar to that in get_action()
-        mean = self.actor(batch_obs)
-        dist = MultivariateNormal(mean, self.cov_mat)
-        log_probs = dist.log_prob(batch_acts)
+        out = self.actor(batch_obs)
+        if self.act_type == 'box':
+            dist = MultivariateNormal(out, self.cov_mat)
+        if self.act_type == 'discrete':
+            dist = Categorical(out)
+        action = dist.sample()
+        log_probs = dist.log_prob(action)
 
         # Return the value vector V of each observation in the batch
         # and log probabilities log_probs of each action in the batch
@@ -390,7 +398,7 @@ class PPO:
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
 
         # Log the data in W&B
-        wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "extrinsic reward":avg_ep_extr_rews, "loss": avg_actor_loss})
+        wandb.log({"length": avg_ep_lens, "reward": avg_ep_extr_rews, "enhanced reward":avg_ep_rews, "loss": avg_actor_loss})
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))

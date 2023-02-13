@@ -6,6 +6,7 @@
 import gym
 import sys
 import torch
+import torch.nn
 import wandb
 
 from arguments import get_args
@@ -30,9 +31,25 @@ def train(env, hyperparameters, actor_model, critic_model):
     run = wandb.init(project='ngu',entity='bigfoot', config = hyperparameters)
     wandb.config.update({'env':env})
 
+    # Extract environment information
+    obs_shape = env.observation_space.shape
+
+    if type(env.action_space) == gym.spaces.Box:
+        act_type = 'box'
+        act_shape = env.action_space.shape
+    
+    if type(env.action_space) == gym.spaces.Discrete:
+        act_type = 'discrete'
+        # For discrete spaces the action is a softmax vector of probabilities to take each action
+        act_shape = (env.action_space.n,)
+    
     # Create a model for PPO.
-    policy_class = black_box.black_box(black_box.FeedForwardNN, hidden_shape=(64,64), out_activation=None)
-    model = PPO(policy_class=policy_class, env=env, **hyperparameters)
+    if act_type == 'box':
+        actor = black_box.FeedForwardNN(in_shape=obs_shape, out_shape=act_shape, hidden_shape=(64,64), out_activation=None)
+    if act_type == 'discrete':
+        actor = black_box.FeedForwardNN(in_shape=obs_shape, out_shape=act_shape, hidden_shape=(64,64), out_activation=torch.nn.Softmax())
+    critic = black_box.FeedForwardNN(in_shape=obs_shape, out_shape=(1,), hidden_shape=(64,64), out_activation=None)
+    model = PPO(actor, critic, env=env, **hyperparameters)
 
     # Tries to load in an existing actor/critic model to continue training on
     if actor_model != '' and critic_model != '':
@@ -49,10 +66,11 @@ def train(env, hyperparameters, actor_model, critic_model):
     # Train the PPO model with a specified total timesteps
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
-    model.learn(total_timesteps=10_000_000)
+    model.learn(total_timesteps=400_000)
     run.finish()
 
     
+# !!!!!!!!!!!!!Works like shit or not at all right now!!!!!!!!!!!!!!!!
 def test(env, actor_model, ep):
     """
         Tests the model.
@@ -113,7 +131,7 @@ def main(args):
     # Creates the environment we'll be running. If you want to replace with your own
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
-    env = gym.make('MountainCar-v0', render_mode = 'rgb_array')
+    env = gym.make('Pendulum-v1', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
     if args.mode == 'train':
