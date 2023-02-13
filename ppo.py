@@ -212,10 +212,6 @@ class PPO:
 
                 # Calculate action 
                 action, log_prob = self.get_action(obs)
-
-                # Track recent action, and action log probability
-                batch_acts.append(action)
-                batch_log_probs.append(log_prob)
                 
                 # Make a step in the env and track reward.
                 # Note that rew is short for reward.
@@ -223,7 +219,12 @@ class PPO:
                 ep_extr_rews.append(rew)
                 rew += self.rnd.get_reward(obs)
                 ep_rews.append(rew)
-
+                
+                # Track recent action, and action log probability
+                if self.act_type == 'discrete':
+                    action = torch.tensor(action)
+                batch_acts.append(action)
+                batch_log_probs.append(log_prob)
 
                 # If the environment tells us the episode is terminated, break
                 if done:
@@ -298,7 +299,7 @@ class PPO:
         
         # Sample an action from the distribution
         action = dist.sample()
-        
+            
         # Calculate the log probability for that action
         log_prob = dist.log_prob(action)
 
@@ -329,8 +330,7 @@ class PPO:
             dist = MultivariateNormal(out, self.cov_mat)
         if self.act_type == 'discrete':
             dist = Categorical(out)
-        action = dist.sample()
-        log_probs = dist.log_prob(action)
+        log_probs = dist.log_prob(batch_acts)
 
         # Return the value vector V of each observation in the batch
         # and log probabilities log_probs of each action in the batch

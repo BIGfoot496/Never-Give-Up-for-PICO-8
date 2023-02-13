@@ -119,9 +119,9 @@ def main(args):
                 'max_timesteps_per_episode': 200, 
                 'gamma': 0.99, 
                 'n_updates_per_iteration': 10,
-                'lr': 2e-3, 
-                'clip': 0.15,
-                'lambda_return' : 0.96,
+                'lr': 3e-3, 
+                'clip': 0.1,
+                'lambda_return' : 0.99,
                 'render': True,
                 'render_every_i': 10,
               }
@@ -131,7 +131,7 @@ def main(args):
     # Creates the environment we'll be running. If you want to replace with your own
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
-    env = gym.make('Pendulum-v1', render_mode = 'rgb_array')
+    env = gym.make('Acrobot-v1', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
     if args.mode == 'train':
