@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import ExponentialLR
 from torch.distributions import MultivariateNormal, Categorical
 
 from rnd import RND
@@ -57,9 +58,13 @@ class PPO:
         self.critic = critic
 
         # Initialize optimizers for actor and critic
-        self.actor_optim = Adam(self.actor.parameters(), lr=self.lr)
-        self.critic_optim = Adam(self.critic.parameters(), lr=self.lr)
-
+        self.actor_optim = Adam(self.actor.parameters(), lr=self.lr, eps=1e-5)
+        self.critic_optim = Adam(self.critic.parameters(), lr=self.lr, eps=1e-5)
+        
+        # Initialize learning rate schedulers
+        self.actor_scheduler = ExponentialLR(self.actor_optim, gamma=0.98)
+        self.critic_scheduler = ExponentialLR(self.critic_optim, gamma=0.98)
+        
         if self.act_type == 'box':
             # Initialize the covariance matrix used to query the actor for actions
             self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
@@ -148,9 +153,13 @@ class PPO:
                 self.critic_optim.zero_grad()
                 critic_loss.backward()
                 self.critic_optim.step()
-
+                
                 # Log actor loss
                 self.logger['actor_losses'].append(actor_loss.detach())
+
+            # Anneal the learning rate
+            self.actor_scheduler.step()
+            self.critic_scheduler.step()
 
             # Print a summary of our training so far
             self._log_summary()
