@@ -4,15 +4,17 @@ This repo is copied from the PPO for Beginners implementation by Eric Yu. I inte
 
 # TODO:
 
-Refactor ppo.py to remove elifs (factory method depending on action space type)
+Refactor ppo.py to remove elifs (factory method depending on action space type?)
 
 Rewrite the policy evaluation module (or fix the existing one)
 
-Build the whole of NGU lol:
+Make two different heads for intrinsic and extrinsic rewards
 
-    Build RND
-    
-    Build Episodic Memory module
+Refactor ppo.py to be able to just load the actor and critic architectures, instead of the extremely ugly mess that it is right now.
+
+Entropy normalization?
+
+Build Episodic Memory module
     
 Make a gym environment from PICO-8
 

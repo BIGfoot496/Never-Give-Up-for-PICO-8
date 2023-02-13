@@ -27,8 +27,8 @@ def train(env, hyperparameters, actor_model, critic_model):
     
     print("Training", flush=True)
 
-    #run = wandb.init(project='ngu',entity='bigfoot', config = hyperparameters)
-    #wandb.config.update({'env':env})
+    run = wandb.init(project='ngu',entity='bigfoot', config = hyperparameters)
+    wandb.config.update({'env':env})
 
     # Create a model for PPO.
     policy_class = black_box.black_box(black_box.FeedForwardNN, hidden_shape=(64,64), out_activation=None)
@@ -49,8 +49,8 @@ def train(env, hyperparameters, actor_model, critic_model):
     # Train the PPO model with a specified total timesteps
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
-    model.learn(total_timesteps=1_000_000)
-    #run.finish()
+    model.learn(total_timesteps=10_000_000)
+    run.finish()
 
     
 def test(env, actor_model, ep):
@@ -101,9 +101,9 @@ def main(args):
                 'max_timesteps_per_episode': 200, 
                 'gamma': 0.99, 
                 'n_updates_per_iteration': 10,
-                'lr': 3e-3, 
+                'lr': 2e-3, 
                 'clip': 0.15,
-                'lambda_return' : 0.98,
+                'lambda_return' : 0.96,
                 'render': True,
                 'render_every_i': 10,
               }

@@ -16,9 +16,9 @@ class RND:
     for an RL agent to augment the sparse extrinsic reward.
     """
     def __init__(self, in_shape):
-        self.lr = 3e-3
-        self.target = FeedForwardNN(in_shape,  (32,), (64,128,64))
-        self.predictor = FeedForwardNN(in_shape, (32,), (64,64))
+        self.lr = 5e-4
+        self.target = FeedForwardNN(in_shape,  (8,), (64,128,64))
+        self.predictor = FeedForwardNN(in_shape, (8,), (64,64))
         self.predictor_optim = Adam(self.predictor.parameters(), lr=self.lr)
         self.welford = WelfordVarianceEstimator((0,0))
 

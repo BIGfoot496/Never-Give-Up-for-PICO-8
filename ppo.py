@@ -390,7 +390,7 @@ class PPO:
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
 
         # Log the data in W&B
-        #wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "loss": avg_actor_loss})
+        wandb.log({"length": avg_ep_lens, "reward": avg_ep_rews, "extrinsic reward":avg_ep_extr_rews, "loss": avg_actor_loss})
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))
