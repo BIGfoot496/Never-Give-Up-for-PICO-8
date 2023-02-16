@@ -15,6 +15,8 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.distributions import MultivariateNormal, Categorical
 
+from matplotlib import pyplot as plt
+
 from rnd import RND
 
 class PPO:
@@ -36,7 +38,7 @@ class PPO:
 
         # Initialize hyperparameters for training with PPO
         self._init_hyperparameters(hyperparameters)
-        
+                
         # Make sure the environment is compatible with our code
         assert(type(env.observation_space) == gym.spaces.Box)
             
@@ -62,17 +64,14 @@ class PPO:
         self.critic_optim = Adam(self.critic.parameters(), lr=self.lr, eps=1e-5)
         
         # Initialize learning rate schedulers
-        self.actor_scheduler = ExponentialLR(self.actor_optim, gamma=0.98)
-        self.critic_scheduler = ExponentialLR(self.critic_optim, gamma=0.98)
+        self.actor_scheduler = ExponentialLR(self.actor_optim, gamma=self.annealing_rate)
+        self.critic_scheduler = ExponentialLR(self.critic_optim, gamma=self.annealing_rate)
         
         if self.act_type == 'box':
             # Initialize the covariance matrix used to query the actor for actions
             self.cov_var = torch.full(size=self.act_shape, fill_value=0.5)
             self.cov_mat = torch.diag(self.cov_var)
-
-        # Initialize the RND networks
-        self.rnd = RND(self.obs_shape)
-
+        
         # This logger will help us with printing out summaries of each iteration
         self.logger = {
             'delta_t': time.time_ns(),
@@ -82,6 +81,13 @@ class PPO:
             'batch_rews': [],       # episodic returns in batch
             'actor_losses': [],     # losses of actor network in current iteration
         }
+        
+        # Walk a random agent through the environment to initialize the RND networks
+        ex_f = self.exploration_factor
+        self.exploration_factor = 0
+        batch_obs, _, _, _, _, _ = self.rollout()
+        self.rnd = RND(self.obs_shape, batch_obs.numpy())
+        self.exploration_factor = ex_f
 
     def learn(self, total_timesteps):
         """
@@ -125,12 +131,6 @@ class PPO:
                 V, curr_log_probs = self.evaluate(batch_obs, batch_acts)
 
                 # Calculate the ratio pi_theta(a_t | s_t) / pi_theta_k(a_t | s_t)
-                # NOTE: we just subtract the logs, which is the same as
-                # dividing the values and then canceling the log with e^log.
-                # For why we use log probabilities instead of actual probabilities,
-                # here's a great explanation: 
-                # https://cs.stackexchange.com/questions/70518/why-do-we-use-the-log-in-gradient-based-reinforcement-algorithms
-                # TL;DR makes gradient ascent easier behind the scenes.
                 ratios = torch.exp(curr_log_probs - batch_log_probs)
 
                 # Calculate surrogate losses.
@@ -160,9 +160,13 @@ class PPO:
             # Anneal the learning rate
             self.actor_scheduler.step()
             self.critic_scheduler.step()
+            self.rnd.anneal_lr()
 
             # Print a summary of our training so far
             self._log_summary()
+
+            plt.scatter(np.transpose(batch_obs)[0].numpy(), np.transpose(batch_obs)[1].numpy())
+            plt.show()
 
             # Save our model if it's time
             if i_so_far % self.save_freq == 0:
@@ -226,7 +230,8 @@ class PPO:
                 # Note that rew is short for reward.
                 obs, rew, done, _, _ = self.env.step(action)
                 ep_extr_rews.append(rew)
-                rew += self.rnd.get_reward(obs)
+                if self.exploration_factor:
+                    rew += self.exploration_factor * self.rnd.get_reward(obs)
                 ep_rews.append(rew)
                 
                 # Track recent action, and action log probability
@@ -363,7 +368,9 @@ class PPO:
         self.gamma = 0.95                               # Discount factor to be applied when calculating Rewards-To-Go
         self.lambda_return = 0.96                       # Smoothing factor to be applied in GAE. lambda=1 is equivalent to Monte Carlo
         self.clip = 0.2                                 # Recommended 0.2, helps define the threshold to clip the ratio during SGA
-
+        self.annealing_rate = 0.98                      # Rate at which the learning rate drops to 0 with time
+        self.exploration_factor = 1                     # This is beta from r = r_e + beta * r_i. If beta=0 curiosity is off.
+        
         # Miscellaneous parameters
         self.render = True                              # If we should render during rollout
         self.render_every_i = 10                        # Only render every n iterations

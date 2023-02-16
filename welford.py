@@ -14,3 +14,6 @@ class WelfordVarianceEstimator:
 
     def get_variance(self):
         return self.S_k/(self.k-1)
+    
+    def get_mean(self):
+        return self.M_k

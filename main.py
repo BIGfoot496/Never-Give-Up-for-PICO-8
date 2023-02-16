@@ -14,6 +14,8 @@ from ppo import PPO
 import black_box
 from eval_policy import eval_policy
 
+import os
+
 def train(env, hyperparameters, actor_model, critic_model):
     """
         Trains the model.
@@ -66,7 +68,7 @@ def train(env, hyperparameters, actor_model, critic_model):
     # Train the PPO model with a specified total timesteps
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
-    model.learn(total_timesteps=400_000)
+    model.learn(total_timesteps=5_000_000)
     run.finish()
 
     
@@ -115,23 +117,23 @@ def main(args):
     # ArgumentParser because it's too annoying to type them every time at command line. Instead, you can change them here.
     # To see a list of hyperparameters, look in ppo.py at function _init_hyperparameters
     hyperparameters = {
-                'timesteps_per_batch': 2000, 
+                'timesteps_per_batch': 600, 
                 'max_timesteps_per_episode': 200, 
                 'gamma': 0.99, 
                 'n_updates_per_iteration': 10,
-                'lr': 3e-3, 
-                'clip': 0.1,
-                'lambda_return' : 0.99,
+                'lr': 1e-4, 
+                'clip': 0.15,
+                'lambda_return' : 0.97,
+                'annealing_rate' : 0.995,
+                'exploration_factor' : 1,
                 'render': True,
                 'render_every_i': 10,
               }
 
-
-
     # Creates the environment we'll be running. If you want to replace with your own
     # custom environment, note that it must inherit Gym and have both continuous
     # observation and action spaces.
-    env = gym.make('Acrobot-v1', render_mode = 'rgb_array')
+    env = gym.make('MountainCar-v0', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
     if args.mode == 'train':
@@ -141,4 +143,5 @@ def main(args):
 
 if __name__ == '__main__':
     args = get_args() # Parse arguments from command line
+    os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
     main(args)
