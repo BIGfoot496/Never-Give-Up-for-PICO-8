@@ -1,9 +1,9 @@
 from torch import nn
 from torch.optim import Adam
 from black_box import FeedForwardNN
-from welford import WelfordVarianceEstimator
+import numpy as np
 from torch.optim.lr_scheduler import ExponentialLR
-
+from welford import WelfordVarianceEstimator
 
 class RND:
     """
@@ -20,35 +20,27 @@ class RND:
                 init_obs - A bunch of observations gathered by running a random agent in the environment to initialize the variance estimator
         '''
         self.lr = 1e-4
-        self.target = FeedForwardNN(in_shape,  (16,), (32,32,32))
-        self.predictor = FeedForwardNN(in_shape, (16,), (32,32))
+        self.target = FeedForwardNN(in_shape,  (32,), (32,32,32))
+        self.predictor = FeedForwardNN(in_shape, (32,), (32,32))
         self.predictor_optim = Adam(self.predictor.parameters(), lr=self.lr)
         self.scheduler = ExponentialLR(self.predictor_optim, 0.995)
-        self.loss_welford = WelfordVarianceEstimator((0,0))
-        self.obs_welford = WelfordVarianceEstimator(init_obs)
-
-    def get_reward(self, obs):
-        # Collect the stats
-        self.obs_welford.step(obs)
+        self.obs_w = WelfordVarianceEstimator(init_obs)
         
+    def get_reward(self, obs):     
         # Normalize the observation
-        obs = (obs-self.obs_welford.get_mean())/(self.obs_welford.get_variance()**0.5)
+        obs = (obs-self.obs_w.get_mean())/(self.obs_w.get_variance()**0.5 + 1e-10)
         
         # Get the loss
         targ = self.target(obs)
         pred = self.predictor(obs)
         loss = nn.MSELoss()(targ, pred)
         
-        # Collect the stats
-        self.loss_welford.step(loss.detach())
-        
         # Learn
         self.predictor_optim.zero_grad()
         loss.backward()
         self.predictor_optim.step()
         
-        # Normalize the reward
-        return loss.detach()/(self.loss_welford.get_variance()**0.5)
-    
+        return loss.detach()
+
     def anneal_lr(self):
         self.scheduler.step()

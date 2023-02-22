@@ -4,7 +4,7 @@
             It can be found here: https://spinningup.openai.com/en/latest/_images/math/e62a8971472597f4b014c2da064f636ffe365ba3.svg
 """
 
-import gym
+import gymnasium as gym
 import time
 import wandb
 
@@ -103,7 +103,7 @@ class PPO:
         i_so_far = 0 # Iterations ran so far
         while t_so_far < total_timesteps:                                                                       # ALG STEP 2
             # Autobots, roll out (just kidding, we're collecting our batch simulations here)
-            batch_obs, batch_acts, batch_log_probs, batch_rews, batch_extr_rews, batch_lens = self.rollout()    # ALG STEP 3
+            batch_obs, batch_acts, batch_log_probs, batch_intr_rews, batch_extr_rews, batch_lens = self.rollout()    # ALG STEP 3
 
             # Calculate how many timesteps we collected this batch
             t_so_far += np.sum(batch_lens)
@@ -117,6 +117,7 @@ class PPO:
 
             # Calculate advantage at k-th iteration using GAE
             V, _ = self.evaluate(batch_obs, batch_acts)
+            batch_rews = batch_extr_rews + self.exploration_factor*batch_intr_rews
             A_k = self.estimate_advantage(batch_rews, V.detach())
 
             # One of the only tricks I use that isn't in the pseudocode. Normalizing advantages
@@ -156,12 +157,13 @@ class PPO:
                 
                 # Log actor loss
                 self.logger['actor_losses'].append(actor_loss.detach())
-
+          
             # Anneal the learning rate
             self.actor_scheduler.step()
             self.critic_scheduler.step()
             self.rnd.anneal_lr()
-
+            #self.exploration_factor *= (1 - (1 + self.annealing_rate*i_so_far))
+            
             # Print a summary of our training so far
             self._log_summary()
 
@@ -184,7 +186,7 @@ class PPO:
                 batch_obs - the observations collected this batch. Shape: (number of timesteps, dimension of observation)
                 batch_acts - the actions collected this batch. Shape: (number of timesteps, dimension of action)
                 batch_log_probs - the log probabilities of each action taken this batch. Shape: (number of timesteps)
-                batch_rews - the rewards of each timestep in this batch, as a sum of intrinsic and extrinsic rewards. Shape: (number of timesteps)
+                batch_intr_rews - the intrinsic rewards of each timestep in this batch. Shape: (number of timesteps)
                 batch_extr_rews - the extrinsic rewards of each timestep in this batch. Shape: (number of episodes)
                 batch_lens - the lengths of each episode this batch. Shape: (number of episodes)
         """
@@ -192,20 +194,20 @@ class PPO:
         batch_obs = []
         batch_acts = []
         batch_log_probs = []
-        batch_rews = []
+        batch_intr_rews = []
         batch_extr_rews = []
         batch_lens = []
 
         # Episodic data. Keeps track of rewards per episode, will get cleared
         # upon each new episode
-        ep_rews = []
+        ep_intr_rews = []
         ep_extr_rews = []
 
         t = 0 # Keeps track of how many timesteps we've run so far this batch
 
         # Keep simulating until we've run more than or equal to specified timesteps per batch
         while t < self.timesteps_per_batch:
-            ep_rews = [] # rewards collected per episode
+            ep_intr_rews = [] # rewards collected per episode
             ep_extr_rews = []
 
             # Reset the environment. sNote that obs is short for observation. 
@@ -231,8 +233,8 @@ class PPO:
                 obs, rew, done, _, _ = self.env.step(action)
                 ep_extr_rews.append(rew)
                 if self.exploration_factor:
-                    rew += self.exploration_factor * self.rnd.get_reward(obs)
-                ep_rews.append(rew)
+                    in_rew = self.rnd.get_reward(obs)
+                    ep_intr_rews.append(in_rew)
                 
                 # Track recent action, and action log probability
                 if self.act_type == 'discrete':
@@ -244,22 +246,28 @@ class PPO:
                 if done:
                     break
 
+            # Normalize intrinsic rewards
+            ep_intr_rews = ep_intr_rews / (np.std(ep_intr_rews) + 1e-10)
             # Track episodic lengths and rewards
             batch_lens.append(ep_t + 1)
-            batch_rews.append(ep_rews)
+            batch_intr_rews.append(ep_intr_rews)
             batch_extr_rews.append(ep_extr_rews)
 
         # Reshape data as tensors in the shape specified in function description, before returning
-        batch_obs = torch.tensor(batch_obs, dtype=torch.float)
+        batch_obs = torch.tensor(np.array(batch_obs), dtype=torch.float)
         batch_acts = torch.tensor(batch_acts, dtype=torch.float)
         batch_log_probs = torch.tensor(batch_log_probs, dtype=torch.float)
+        batch_extr_rews = np.array(batch_extr_rews)
+        batch_intr_rews = np.array(batch_intr_rews)
+        if not self.exploration_factor:
+            batch_intr_rews = np.zeros_like(batch_extr_rews)
 
         # Log the episodic returns and episodic lengths in this batch.
-        self.logger['batch_rews'] = batch_rews
+        self.logger['batch_intr_rews'] = batch_intr_rews
         self.logger['batch_extr_rews'] = batch_extr_rews
         self.logger['batch_lens'] = batch_lens
 
-        return batch_obs, batch_acts, batch_log_probs, batch_rews, batch_extr_rews, batch_lens
+        return batch_obs, batch_acts, batch_log_probs, batch_intr_rews, batch_extr_rews, batch_lens
 
     # Generalized Advantage Estimation
     def estimate_advantage(self, batch_rews, values):
@@ -410,24 +418,26 @@ class PPO:
         i_so_far = self.logger['i_so_far']
         avg_ep_lens = np.mean(self.logger['batch_lens'])
         avg_ep_extr_rews = np.mean([np.sum(ep_extr_rews) for ep_extr_rews in self.logger['batch_extr_rews']])
-        avg_ep_rews = np.mean([np.sum(ep_rews) for ep_rews in self.logger['batch_rews']])
+        avg_ep_intr_rews = np.mean([np.sum(ep_intr_rews) for ep_intr_rews in self.logger['batch_intr_rews']])
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
+        lr = self.actor_scheduler.get_lr()[0]
 
         # Log the data in W&B
-        wandb.log({"length": avg_ep_lens, "reward": avg_ep_extr_rews, "enhanced reward":avg_ep_rews, "loss": avg_actor_loss})
+        wandb.log({"length": avg_ep_lens, "reward": avg_ep_extr_rews, "intrinsic reward":avg_ep_intr_rews, "loss": avg_actor_loss})
 
         # Round decimal places for more aesthetic logging messages
         avg_ep_lens = str(round(avg_ep_lens, 2))
         avg_ep_extr_rews = str(round(avg_ep_extr_rews, 2))
-        avg_ep_rews = str(round(avg_ep_rews, 2))
+        avg_ep_intr_rews = str(round(avg_ep_intr_rews, 2))
         avg_actor_loss = str(round(avg_actor_loss, 5))
 
         # Print logging statements
         print(flush=True)
         print(f"-------------------- Iteration #{i_so_far} --------------------", flush=True)
+        print(f"Learning rate: {lr}", flush=True)
         print(f"Average Episodic Length: {avg_ep_lens}", flush=True)
         print(f"Average Episodic Return: {avg_ep_extr_rews}", flush=True)
-        print(f"Average Enhanced Episodic Return: {avg_ep_rews}", flush=True)
+        print(f"Average Episodic Intrinsic Reward: {avg_ep_intr_rews}", flush=True)
         print(f"Average Loss: {avg_actor_loss}", flush=True)
         print(f"Timesteps So Far: {t_so_far}", flush=True)
         print(f"Iteration took: {delta_t} secs", flush=True)

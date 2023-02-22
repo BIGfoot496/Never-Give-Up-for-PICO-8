@@ -3,7 +3,7 @@
     https://medium.com/@eyyu/coding-ppo-from-scratch-with-pytorch-part-1-4-613dfc1b14c8
 """
 
-import gym
+import gymnasium as gym
 import sys
 import torch
 import torch.nn
@@ -30,7 +30,7 @@ def train(env, hyperparameters, actor_model, critic_model):
     
     print("Training", flush=True)
 
-    run = wandb.init(project='ngu',entity='bigfoot', config = hyperparameters)
+    wandb_run = wandb.init(project='ngu',entity='bigfoot', config = hyperparameters)
     wandb.config.update({'env':env})
 
     # Extract environment information
@@ -69,7 +69,7 @@ def train(env, hyperparameters, actor_model, critic_model):
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
     model.learn(total_timesteps=5_000_000)
-    run.finish()
+    wandb_run.finish()
 
     
 # !!!!!!!!!!!!!Works like shit or not at all right now!!!!!!!!!!!!!!!!
@@ -117,13 +117,13 @@ def main(args):
     # ArgumentParser because it's too annoying to type them every time at command line. Instead, you can change them here.
     # To see a list of hyperparameters, look in ppo.py at function _init_hyperparameters
     hyperparameters = {
-                'timesteps_per_batch': 600, 
+                'timesteps_per_batch': 2000, 
                 'max_timesteps_per_episode': 200, 
-                'gamma': 0.99, 
+                'gamma': 0.995, 
                 'n_updates_per_iteration': 10,
-                'lr': 1e-4, 
+                'lr': 5e-3, 
                 'clip': 0.15,
-                'lambda_return' : 0.97,
+                'lambda_return' : 0.98,
                 'annealing_rate' : 0.995,
                 'exploration_factor' : 1,
                 'render': True,
@@ -131,8 +131,7 @@ def main(args):
               }
 
     # Creates the environment we'll be running. If you want to replace with your own
-    # custom environment, note that it must inherit Gym and have both continuous
-    # observation and action spaces.
+    # custom environment, note that it must inherit Gym
     env = gym.make('MountainCar-v0', render_mode = 'rgb_array')
 
     # Train or test, depending on the mode specified
