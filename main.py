@@ -68,7 +68,7 @@ def train(env, hyperparameters, actor_model, critic_model):
     # Train the PPO model with a specified total timesteps
     # NOTE: You can change the total timesteps here, I put a big number just because
     # you can kill the process whenever you feel like PPO is converging
-    model.learn(total_timesteps=5_000_000)
+    model.learn(total_timesteps=1_000_000)
     wandb_run.finish()
 
     
@@ -119,13 +119,14 @@ def main(args):
     hyperparameters = {
                 'timesteps_per_batch': 2000, 
                 'max_timesteps_per_episode': 200, 
-                'gamma': 0.995, 
+                'gamma': 0.998, 
                 'n_updates_per_iteration': 10,
                 'lr': 5e-3, 
-                'clip': 0.15,
-                'lambda_return' : 0.98,
-                'annealing_rate' : 0.995,
-                'exploration_factor' : 1,
+                'clip': 0.17,
+                'lambda_return' : 0.99,
+                'annealing_rate' : 0.998,
+                'std_set_iteration' : 8,
+                'exploration_factor' : 0.5,
                 'render': True,
                 'render_every_i': 10,
               }

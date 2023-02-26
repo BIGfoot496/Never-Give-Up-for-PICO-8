@@ -4,15 +4,17 @@ This repo is copied from the PPO for Beginners implementation by Eric Yu. I inte
 
 # TODO:
 
-Refactor ppo.py to remove elifs (factory method depending on action space type?)
+Change the reward normalization scheme so that it doesn't disincentivise doing new stuff
 
-Rewrite the policy evaluation module (or fix the existing one)
+Solve the goddamned MountainCar!
 
 Make two different heads for intrinsic and extrinsic rewards
 
-Refactor ppo.py to be able to just load the actor and critic architectures, instead of the extremely ugly mess that it is right now.
-
 Entropy normalization?
+
+Refactor ppo.py to remove elifs (factory method depending on action space type?)
+
+Rewrite the policy evaluation module (or fix the existing one)
 
 Build Episodic Memory module
     

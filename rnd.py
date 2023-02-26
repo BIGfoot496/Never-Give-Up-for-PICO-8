@@ -23,11 +23,19 @@ class RND:
         self.target = FeedForwardNN(in_shape,  (32,), (32,32,32))
         self.predictor = FeedForwardNN(in_shape, (32,), (32,32))
         self.predictor_optim = Adam(self.predictor.parameters(), lr=self.lr)
-        self.scheduler = ExponentialLR(self.predictor_optim, 0.995)
+        self.scheduler = ExponentialLR(self.predictor_optim, 0.999)
         self.obs_w = WelfordVarianceEstimator(init_obs)
+        init_loss = []
+        for obs in init_obs:
+            targ = self.target(obs)
+            pred = self.predictor(obs)
+            loss = nn.MSELoss()(targ, pred)
+            init_loss.append(loss.detach().numpy())
+        self.loss_w = WelfordVarianceEstimator(init_loss)
         
     def get_reward(self, obs):     
-        # Normalize the observation
+        # Normalize the observation and collect the stats
+        self.obs_w.step(obs)
         obs = (obs-self.obs_w.get_mean())/(self.obs_w.get_variance()**0.5 + 1e-10)
         
         # Get the loss
@@ -40,7 +48,16 @@ class RND:
         loss.backward()
         self.predictor_optim.step()
         
-        return loss.detach()
+        # Collect the stats        
+        self.loss_w.step(loss.detach().numpy())
+
+        return loss.detach().numpy()
 
     def anneal_lr(self):
         self.scheduler.step()
+    
+    def reset_rew_std(self, rew):
+        self.loss_w = WelfordVarianceEstimator(rew)
+        
+    def get_rew_std(self):
+        return self.loss_w.get_variance()**0.5

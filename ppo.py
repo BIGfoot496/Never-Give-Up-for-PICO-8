@@ -157,12 +157,11 @@ class PPO:
                 
                 # Log actor loss
                 self.logger['actor_losses'].append(actor_loss.detach())
-          
+                        
             # Anneal the learning rate
             self.actor_scheduler.step()
             self.critic_scheduler.step()
             self.rnd.anneal_lr()
-            #self.exploration_factor *= (1 - (1 + self.annealing_rate*i_so_far))
             
             # Print a summary of our training so far
             self._log_summary()
@@ -245,9 +244,15 @@ class PPO:
                 # If the environment tells us the episode is terminated, break
                 if done:
                     break
-
-            # Normalize intrinsic rewards
-            ep_intr_rews = ep_intr_rews / (np.std(ep_intr_rews) + 1e-10)
+                
+            if self.exploration_factor:
+                # Reset the variance estimator in RND
+                if self.logger['i_so_far'] < self.std_set_iteration:
+                    self.rnd.reset_rew_std(ep_intr_rews)
+                
+                # Normalize intrinsic rewards
+                ep_intr_rews = ep_intr_rews / (self.rnd.get_rew_std() + 1e-10)
+            
             # Track episodic lengths and rewards
             batch_lens.append(ep_t + 1)
             batch_intr_rews.append(ep_intr_rews)
@@ -376,8 +381,9 @@ class PPO:
         self.gamma = 0.95                               # Discount factor to be applied when calculating Rewards-To-Go
         self.lambda_return = 0.96                       # Smoothing factor to be applied in GAE. lambda=1 is equivalent to Monte Carlo
         self.clip = 0.2                                 # Recommended 0.2, helps define the threshold to clip the ratio during SGA
-        self.annealing_rate = 0.98                      # Rate at which the learning rate drops to 0 with time
+        self.annealing_rate = 0.995                     # Rate at which the learning rate drops to 0 with time
         self.exploration_factor = 1                     # This is beta from r = r_e + beta * r_i. If beta=0 curiosity is off.
+        self.std_set_iteration = 3                      # The number of iterations until we think the ICM overfits, and the reward variance becomes stable.
         
         # Miscellaneous parameters
         self.render = True                              # If we should render during rollout
@@ -420,7 +426,7 @@ class PPO:
         avg_ep_extr_rews = np.mean([np.sum(ep_extr_rews) for ep_extr_rews in self.logger['batch_extr_rews']])
         avg_ep_intr_rews = np.mean([np.sum(ep_intr_rews) for ep_intr_rews in self.logger['batch_intr_rews']])
         avg_actor_loss = np.mean([losses.float().mean() for losses in self.logger['actor_losses']])
-        lr = self.actor_scheduler.get_lr()[0]
+        lr = self.actor_scheduler.get_last_lr()[0]
 
         # Log the data in W&B
         wandb.log({"length": avg_ep_lens, "reward": avg_ep_extr_rews, "intrinsic reward":avg_ep_intr_rews, "loss": avg_actor_loss})
